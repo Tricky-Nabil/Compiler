@@ -1,0 +1,669 @@
+%option noyywrap yylineno
+
+%x SINGLE_LINE_COMMENT
+%x MULTI_LINE_COMMENT
+%x STRING
+%{
+
+#include<bits/stdc++.h>
+
+using namespace std;
+
+int error_count = 0;
+
+string str_for_comment;
+int line_count_comment;
+
+string str_for_string;
+int line_count_string;
+
+map<char, string> Special_Char = {
+        {'n', "\n"},
+        {'t', "\t"},
+        {'\\', "\\"},
+        {'\'', "\'"},
+        {'a', "\a"},
+        {'f', "\f"},
+        {'r', "\r"},
+        {'b', "\b"},
+        {'v', "\v"},
+        {'0', "\0"},
+        {'\"', "\""},
+    };
+
+
+
+ofstream tokenout;
+string log_str;
+string token_str;
+
+static unsigned long long SDBMHash(string str) {
+	unsigned long long hash = 0;
+	unsigned int i = 0;
+	unsigned int len = str.length();
+
+	for (i = 0; i < len; i++)
+	{
+		hash = (str[i]) + (hash << 6) + (hash << 16) - hash;
+	}
+
+	return hash;
+}
+
+class SymbolInfo{
+    
+    string name;
+    string type;
+    SymbolInfo* next;
+    public:
+    SymbolInfo(){
+        next = nullptr;
+    }
+    SymbolInfo(string n , string t){
+        name = n;
+        type = t;
+        next = nullptr;
+    }
+
+    void setName(string n){
+        name = n;
+    }
+    void setType(string t){
+        type = t;
+    }
+    string getName(){
+        return name;
+    }
+    string getType(){
+        return type;
+    }
+    void setNext(SymbolInfo* s){
+        next = s;
+    }
+    SymbolInfo* getNext(){
+        return next;
+    }
+     
+    void show(){
+        cout<<"<"<<name<<","<<type<<"> ";
+    }
+    ~SymbolInfo(){
+        delete next;
+    }
+};
+
+class ScopeTable{
+    int bucket;
+    SymbolInfo** hashTable;
+    ScopeTable* parent;
+    int Scp_num;
+
+    public:
+    ScopeTable(int n , int scp , ScopeTable* p = nullptr){
+        bucket = n;
+        Scp_num = scp;
+        parent = p;
+        hashTable = new SymbolInfo*[bucket];
+        for(int i = 0 ; i < bucket ; i++){
+            
+            hashTable[i] = nullptr;
+        }
+    }
+
+    int getScpNumber(){
+        return Scp_num;
+    }
+
+    int getHash(string str){
+        return SDBMHash(str) % bucket;
+    }
+
+    void setParent(ScopeTable* s){
+        parent = s;
+    }
+
+    ScopeTable* getParent(){
+        return parent;
+    }
+
+    bool insert(string name , string type){
+        auto index = getHash(name) ;
+        //cout<<"Hash Value: "<<index + 1<<endl;
+       // pos1 = index + 1;
+        int cnt = 2;
+        auto head = hashTable[index];
+       // int dummy1 , dummy2;
+        if(lookup(name) != nullptr){
+           //delete head;
+            return false;
+        }
+            //return false;
+        if(hashTable[index] == nullptr){
+            hashTable[index] = new SymbolInfo(name , type);
+            //pos2 = 1;
+            return true;
+            
+            //SymbolInfo temp(name , type);
+        }
+            //hashTable[index] = new SymbolInfo(name , type);
+        else{
+            
+            while(head->getNext() != nullptr){
+                head = head->getNext();
+                cnt++;
+            }
+            //pos2 = cnt;
+
+            head->setNext(new SymbolInfo(name , type));
+        }
+       // delete head;
+        return true;
+
+        
+        
+
+    }
+
+    bool Delete(string name){
+        auto index = getHash(name);
+        //pos1 = index + 1;
+        auto head = hashTable[index];
+        if(head == nullptr){
+            //delete head;
+            return false;
+        }
+            //return false;
+        
+        if(head->getName() == name){
+            hashTable[index] = head->getNext();
+           // pos2 = 1;
+            delete head;
+            return true;
+        }
+        else{
+            int cnt = 2;
+            auto prev = head;
+            head = head->getNext();
+            while(head != nullptr){
+                if(head->getName() == name){
+                    prev->setNext(head->getNext());
+                    //pos2 = cnt;
+                    delete head;
+                    return true;
+                }
+                cnt++;
+                prev = head;
+                head = head->getNext();
+            }
+
+        }
+        
+        return false;
+ 
+    }
+
+    void print(){
+        for(int i = 0 ; i < bucket ; i++){
+
+            auto head = hashTable[i];
+            if(head == nullptr){
+                //cout<<"Null Position Detected\n";
+                continue;
+            }
+                
+            cout<<"\t"<<i + 1<<"--> ";
+            while(head != nullptr){
+                //cout<<head<<" " << head->getNext() << endl;
+                head->show();   
+                head = head->getNext();
+                
+            }
+            cout<<endl;
+        }
+
+    }
+
+    SymbolInfo* lookup(string name){
+        //SymbolInfo* p = nullptr;
+        auto index  = getHash(name);
+        //pos1 = index + 1;
+        auto head = hashTable[index];
+        int cnt = 1;
+        while(head != nullptr){
+            if(head->getName() == name){
+                //pos2 = cnt;
+                //delete head;
+                return head;
+            }
+            cnt++;
+            head = head->getNext();
+        }
+       // delete head;
+        
+        return nullptr;
+
+    }
+
+    ~ScopeTable(){
+        for(int i = 0 ; i < bucket ; i++){
+            delete hashTable[i];
+        }
+        delete[] hashTable;
+    }
+};
+
+class SymbolTable{
+    int bucket;
+    ScopeTable* curr;
+    int Scoptable_Num;
+
+    public:
+    SymbolTable(int n){
+        bucket = n;
+        curr = nullptr;
+        Scoptable_Num = 0;
+        enterScope();
+
+    }
+    void setBucketSize(int n){
+        bucket = n;
+    }
+
+    void enterScope(){
+        Scoptable_Num++;
+        auto temp = curr;
+        curr = new ScopeTable(bucket , Scoptable_Num);
+        curr->setParent(temp);
+    }
+
+    
+    void exitScope(bool flag){
+        if(flag){
+            exitScope_Extend();
+            return ;
+        }
+        else if(curr->getParent() == nullptr){
+            return;
+        }
+        auto temp = curr;
+        curr = curr->getParent();
+        delete temp;
+        
+    }
+
+    bool insert(string name , string type){
+        bool flag = curr->insert(name , type);
+        return flag;
+    }
+
+    bool remove(string name){
+        bool flag = curr->Delete(name);
+        return flag;
+    }
+
+    SymbolInfo* lookUp(string name){
+        
+        SymbolInfo* flag = nullptr;
+        auto temp  = curr;
+        
+        while(temp != nullptr){
+            flag = temp->lookup(name);
+            if(flag != nullptr){
+                return flag;
+                
+            }   
+            temp = temp->getParent();
+
+        }
+        return flag;
+    }
+
+    void prntCurScp(){
+        
+        curr->print();
+    }
+
+    void printAllScp(){
+        auto temp = curr;
+        
+        while(temp != nullptr){
+            cout<<"\tScopeTable# "<<temp->getScpNumber()<<endl;
+            temp->print();
+            temp = temp->getParent();
+        }
+    }
+
+    ~SymbolTable(){
+        delete curr;
+    }
+
+    private : void exitScope_Extend(){
+        
+        while(curr != nullptr){
+            cout<<"\tScopeTable# "<<curr->getScpNumber()<<" removed\n";
+            auto temp = curr;
+            curr = curr->getParent();
+            delete temp;
+        }
+    }
+    
+};
+
+int bucket_size = 10;
+SymbolTable st(bucket_size);
+
+void printString(string Up , string normal){
+    
+    
+    tokenout<<"<"<<Up<<", "<<normal<<">\n";
+	cout<<"Line# "<<yylineno<<": Token <"<<Up<<"> Lexeme "<<normal<<" found\n";
+    
+}
+
+void UpperString(string s){
+    string temp = "";
+    for(auto i: s){
+			if(i >= 'a' && i <= 'z')
+				temp+= i - 'a' + 'A';
+			else temp += i;
+	}
+
+    printString(temp , s);
+}
+
+void Special_char_handle(string tkn , string text){
+    
+    
+    string val = "";
+    val+=Special_Char[text[2]];
+    cout<<"Line# "<<yylineno<<": Token <"<<tkn<<"> Lexeme "<<val<<" found\n";
+    tokenout<<"<"<<tkn<<", "<<val<<">\n";
+    
+}
+void char_handle(string tkn , string text){
+    
+    string val = "";
+    val+=text[1];
+    cout<<"Line# "<<yylineno<<": Token <"<<tkn<<"> Lexeme "<<val<<" found\n";
+    tokenout<<"<"<<tkn<<", "<<val<<">\n";
+    
+}
+
+void logPrint(string tkn , string text){
+    cout<<"Line# "<<yylineno<<": Token <"<<tkn<<"> Lexeme "<<text<<" found\n";
+}
+
+void tokenPrint(string tkn , string text){
+    tokenout<<"<"<<tkn<<", "<<text<<">\n";
+}
+void string_handle(string tkn1 , string text,int line_no){
+    string tkn;
+    if(yylineno > line_count_string)
+        tkn = "MULTI LINE STRING";
+    else
+        tkn = "SINGLE LINE STRING";
+    string temp = "";
+    int line_of_string = 0;
+    for(int i = 1 ; i < text.length() - 1 ; i++){
+        
+        if(text[i]!='\\'){
+            temp+=text[i];
+        }
+        else{
+            temp+= Special_Char[text[++i]];
+            
+        }
+    }
+    
+    cout<<"Line# "<<line_no<<": Token <"<<tkn<<"> Lexeme "<<text<<" found\n";
+    tokenPrint(tkn , temp);
+    
+}
+void handle_comment(string tkn , string text , int line_no){
+    int line_temp = 0;
+    for(int i = 0 ; i < text.length() ; i++){
+        if(text[i] == '\n')
+            line_temp++;
+        
+    }
+    
+    
+    cout<<"Line# "<<line_no<<": Token <"<<tkn<<"> Lexeme "<<text<<" found\n";
+    
+    
+}
+void ErrorMsg(string str , string text){
+    cout<<"Error at line# "<<yylineno<<": "<<str<<" "<<text<<endl;
+}
+
+void ErrorMsg_Str(string str , string text , int line_no){
+    cout<<"Error at line# "<<line_no<<": "<<str<<" "<<text<<endl;
+}
+void ErrorMsgCom(string str , string text){
+    cout<<"Error at line# "<<yylineno<<": "<<str<<" "<<text<<endl;
+}
+
+%}
+
+WHITESPACE [ \t\f\r\v]+ 
+LETTER [a-zA-Z]
+DIGIT [0-9]
+DIGITS {DIGIT}+
+EXP (E[+-]?{DIGITS})
+NEWLINE \n
+NEWLINE1 (\r)?\n
+FLOAT {DIGITS}{EXP}|{DIGITS}?\.{DIGITS}{EXP}
+CONST_CHAR \'[^\\\n\r]\'
+SPECIAL_CHAR \'\\[nt\\'afrbv0\"]\'
+MULTICHAR_CONST_CHAR \'.[^\'\r\n]+\' 
+UNFINISHED_CONST_CHAR \'(\\\')?[^\'\r\n]?
+EMPTY_CONST_CHAR \'\'
+
+%%
+
+\n  {}
+{WHITESPACE} {}
+"if"|"else"|"for"|"while"|"do"|"break"|"int"|"char"|"float"|"double"|"void"|"return"|"switch"|"default"|"continue"|"case"   { UpperString(yytext); }
+"++"|"--" {printString("INCOP" , yytext);}
+"+"|"-" {printString("ADDOP" , yytext);}
+"*"|"/"|"%" {printString("MULOP" , yytext);}
+"<="|"<"|"=="|">="|">"|"!=" {printString("RELOP" , yytext);}
+"=" {printString("ASSIGNOP" , yytext);}
+"&&"|"||" {printString("LOGICOP" , yytext);}
+"&"|"|"|"^"|"<<"|">>" {printString("BITOP" , yytext);}
+"!" {printString("NOT" , yytext);}
+"(" {printString("LPAREN" , yytext);}
+")" {printString("RPAREN" , yytext);}
+"{" {printString("LCURL" , yytext); st.enterScope();}
+"}" {printString("RCURL" , yytext); st.exitScope(false);}
+"[" {printString("LSQUARE" , yytext);}
+"]" {printString("RSQUARE" , yytext);}
+"," {printString("COMMA" , yytext);}
+";" {printString("SEMICOLON" , yytext);}
+
+
+
+{DIGIT}+ {printString("CONST_INT" , yytext);}
+{DIGITS}{EXP}|{DIGITS}?\.{DIGITS}{EXP}? {printString("CONST_FLOAT" , yytext);}
+
+{DIGITS}{EXP}(\.{DIGITS}{EXP}?)+|{DIGITS}?\.{DIGITS}{EXP}(\.{DIGITS}{EXP}?)+ {
+error_count++;
+ErrorMsg("ILLFORMED_NUMBER",yytext);
+}
+
+[+-]?{DIGITS}?\.{DIGITS}(\.{DIGITS}{EXP}?)+ {
+error_count++;
+ErrorMsg("TOO_MANY_DECIMAL_POINTS",yytext);
+}
+{CONST_CHAR}   {
+    char_handle("CONST_CHAR",yytext);
+    
+}
+{SPECIAL_CHAR}   {
+    Special_char_handle("CONST_CHAR",yytext);
+}
+{EMPTY_CONST_CHAR} {
+    error_count++;
+    ErrorMsg("EMPTY_CONST_CHAR",yytext);
+}
+{MULTICHAR_CONST_CHAR}   {
+    error_count++;
+    ErrorMsg("MULTICHAR_CONST_CHAR",yytext);
+}
+{UNFINISHED_CONST_CHAR}   {
+    error_count++;
+    ErrorMsg("UNFINISHED_CONST_CHAR",yytext);
+}
+
+\"  {
+    str_for_string = yytext;
+    line_count_string = yylineno;
+    BEGIN STRING;
+}
+<STRING>\\{NEWLINE} {
+    str_for_string+=yytext;
+    //line_count_string++;
+}
+
+<STRING>\\\"    {
+    str_for_string+=yytext;
+} 
+<STRING>[^\"\n\r]   {
+    str_for_string+=yytext;
+}
+<STRING>\"  {
+    str_for_string+=yytext;
+    string_handle("",str_for_string,line_count_string);
+    BEGIN INITIAL;
+}
+<STRING>{NEWLINE}   {
+    error_count++;
+    ErrorMsg_Str("UNFINISHED_STRING",str_for_string,line_count_string);
+    BEGIN INITIAL;
+}
+<STRING><<EOF>> {
+    error_count++;
+    ErrorMsg_Str("UNFINISHED_STRING",str_for_string,line_count_string);
+    st.printAllScp();
+    st.exitScope(false);
+    cout<<"Total lines: "<<yylineno<<endl;
+    cout<<"Total errors: "<<error_count<<endl;
+    return 0;
+}
+
+"//" {
+    str_for_comment = yytext;     
+    BEGIN SINGLE_LINE_COMMENT;
+    line_count_comment = yylineno;
+}
+
+<SINGLE_LINE_COMMENT>. {
+    str_for_comment+=yytext;
+}
+
+<SINGLE_LINE_COMMENT>\\{NEWLINE1} {
+    str_for_comment+=yytext;
+    
+    
+}
+
+<SINGLE_LINE_COMMENT>{NEWLINE1} {
+    handle_comment("SINGLE LINE COMMENT",str_for_comment,line_count_comment);
+    BEGIN INITIAL;
+}
+
+<SINGLE_LINE_COMMENT><<EOF>>  {
+    handle_comment( "SINGLE LINE COMMENT",str_for_comment,line_count_comment);
+    st.printAllScp();
+    st.exitScope(false);
+    cout<<"Total lines: "<<yylineno<<endl;
+    cout<<"Total errors: "<<error_count<<endl;
+    return 0;
+}
+
+"/*" {
+    str_for_comment = yytext;
+    BEGIN MULTI_LINE_COMMENT;
+    line_count_comment = yylineno;
+}
+
+<MULTI_LINE_COMMENT>. {
+    str_for_comment+=yytext;
+}
+
+
+<MULTI_LINE_COMMENT>{NEWLINE1} {
+    str_for_comment+=yytext;
+}
+
+
+<MULTI_LINE_COMMENT>"*/" {
+    str_for_comment+=yytext;
+    handle_comment("MULTI LINE COMMENT",str_for_comment,line_count_comment);
+    BEGIN INITIAL;
+} 
+
+    /* error-8: multiline comment error */
+<MULTI_LINE_COMMENT><<EOF>> {
+    error_count++;
+    ErrorMsgCom("UNFINISHED_COMMENT",str_for_comment);
+    //symboltable.printAllScopeTables();
+    st.printAllScp();
+    st.exitScope(false);
+    cout<<"Total lines: "<<yylineno<<endl;
+    cout<<"Total errors: "<<error_count<<endl;
+    return 0;
+} 
+
+
+[_a-zA-Z][_a-zA-Z0-9]* {printString("ID" , yytext);
+    bool flag = st.insert(yytext,"ID");
+    if(flag){
+        //cout<<yytext<<" is inserting"<<endl;
+        st.printAllScp();
+    }
+    else{
+        cout<<"\t"<<yytext<<" already exisits in the current ScopeTable\n";
+    }
+}
+[0-9][a-zA-Z0-9]+ {error_count++;
+ErrorMsg("INVALID_ID_SUFFIX_NUM_PREFIX",yytext);}
+
+.   {
+    error_count++;
+    ErrorMsg("UNRECOGNIZED_CHAR",yytext);
+}
+<<EOF>> {
+    st.printAllScp();
+    st.exitScope(false);
+    cout<<"Total lines: "<<yylineno<<endl;
+    cout<<"Total errors: "<<error_count<<endl;
+    return 0;
+
+}
+
+%%
+
+int main(int argc, char** argv) {
+	if(argc!=2){
+		printf("Please provide input file name and try again\n");
+		return 0;
+	}
+	
+	FILE *fin=fopen(argv[1],"r");
+	if(fin==NULL){
+		printf("Cannot open specified file\n");
+		return 0;
+	}
+	
+	freopen("log.txt","w" , stdout);
+	tokenout.open("token.txt");
+
+	yyin= fin;
+	yylex();
+	
+	fclose(yyin);
+	
+	
+	return 0;
+}
