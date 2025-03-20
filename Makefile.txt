@@ -1,0 +1,4 @@
+parser.out: syntax_semantic.y lex.l Node.cpp Scoptable.cpp
+	bison -d syntax_semantic.y
+	flex lex.l
+	g++ -o parser.out -ggdb3 lex.yy.c syntax_semantic.tab.c Node.cpp
